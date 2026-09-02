@@ -246,3 +246,57 @@ section{scroll-margin-top:64px}
   padding:3px 8px;border-radius:9px;border:1px solid var(--line);color:var(--ink-2);white-space:nowrap}
 .notefoot{font-size:13px;color:var(--ink-2)}
 .notefoot:empty::before{content:"No notes yet";color:var(--ink-3)}
+
+/* ---------- interactive ticks ---------- */
+.tickrow{cursor:pointer;transition:background .15s;user-select:none;-webkit-tap-highlight-color:transparent}
+.tickrow:hover{background:var(--surface-2)}
+.tickrow:active{background:var(--accent-soft)}
+.tickrow .box{transition:background .15s,border-color .15s}
+
+/* ---------- buttons ---------- */
+.card-foot{display:flex;align-items:center;justify-content:space-between;gap:12px}
+.card-foot .notefoot{flex:1;min-width:0}
+.linkbtn{background:none;border:0;padding:4px 2px;font-family:var(--mono);font-size:11px;letter-spacing:.09em;
+  text-transform:uppercase;color:var(--ink-3);cursor:pointer;white-space:nowrap}
+.linkbtn:hover{color:var(--accent)}
+.linkbtn.danger:hover{color:var(--crit)}
+.cta.small.ghost{border-color:var(--line)}
+.cta:disabled{opacity:.55;cursor:default}
+
+/* ---------- sign in ---------- */
+.gate{min-height:100dvh;display:grid;place-items:center;padding:28px;background:var(--hero-bg);color:var(--hero-ink)}
+.gatebox{width:100%;max-width:420px}
+.gatebox h1{font-family:var(--serif);font-size:clamp(30px,6vw,42px);line-height:1.08;margin:10px 0 12px;font-weight:500}
+.gatebox .eyebrow{color:var(--hero-dim)}
+.gatebox .lede{color:var(--hero-dim);font-size:15px;margin:0 0 22px}
+.gateform{display:flex;flex-direction:column;gap:10px}
+.gateform input{width:100%;padding:13px 14px;font-family:var(--sans);font-size:16px;
+  background:rgba(255,255,255,.05);color:var(--hero-ink);border:1px solid var(--hero-line);border-radius:3px}
+.gateform input::placeholder{color:var(--hero-dim)}
+.gateform input:focus{outline:none;border-color:var(--hero-accent)}
+.gateform .cta{justify-content:center;padding:13px 18px}
+.gatenote{margin:16px 0 0;font-size:13px;color:var(--hero-dim)}
+.gatenote.ok{color:var(--hero-accent)}
+.gatenote.bad{color:#E28C81}
+
+/* ---------- add / edit ---------- */
+.modal{position:fixed;inset:0;z-index:60;display:grid;place-items:center;padding:20px;
+  background:rgba(10,16,12,.55);backdrop-filter:blur(3px);overflow-y:auto}
+.modal-card{width:100%;max-width:470px;background:var(--surface);border:1px solid var(--line);
+  border-radius:4px;box-shadow:var(--shadow);padding:20px 21px 18px}
+.modal-card h3{font-family:var(--serif);font-size:22px;font-weight:500;margin-bottom:16px}
+.modal-card form{display:flex;flex-direction:column;gap:12px}
+.modal-card label{display:flex;flex-direction:column;gap:5px;font-family:var(--mono);font-size:11px;
+  letter-spacing:.09em;text-transform:uppercase;color:var(--ink-3)}
+.modal-card input,.modal-card textarea{width:100%;padding:9px 11px;font-family:var(--sans);font-size:16px;
+  color:var(--ink);background:var(--paper);border:1px solid var(--line);border-radius:2px;text-transform:none;letter-spacing:0}
+.modal-card input:focus,.modal-card textarea:focus{outline:none;border-color:var(--accent)}
+.modal-card textarea{resize:vertical;line-height:1.5}
+.row2{display:grid;grid-template-columns:1fr 1fr;gap:12px}
+.modal-card label.chk{flex-direction:row;align-items:center;gap:9px;text-transform:none;
+  font-family:var(--sans);font-size:13.5px;letter-spacing:0;color:var(--ink-2)}
+.modal-card label.chk input{width:16px;height:16px;flex:none;accent-color:var(--accent);padding:0}
+.modal-foot{display:flex;align-items:center;justify-content:space-between;gap:12px;
+  margin-top:6px;padding-top:14px;border-top:1px solid var(--line)}
+.modal-actions{display:flex;gap:8px}
+@media (max-width:430px){.row2{grid-template-columns:1fr}}

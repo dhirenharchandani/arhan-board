@@ -5,12 +5,9 @@
    ============================================================ */
 
 var CONFIG = {
-  /* Paste the published-to-web CSV link here.
-     Sheet > File > Share > Publish to web > choose the tab > Comma-separated values (.csv) */
-  SHEET_CSV: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTOv5kbUtnEUDdVFvB3Rf8EDdoaLogyBm4eoCL9BrUW1D5gFjQ0ra-E2xMECgVvUTbd7PEkUNkd7H8J/pub?gid=1392823886&single=true&output=csv',
-
-  /* The normal edit link, for the "Update the board" button. */
-  SHEET_EDIT: 'https://docs.google.com/spreadsheets/d/1micJob3EH9BX4Jo6ZFTCEtAKB8dMbXLujgcFhHbBq38/edit',
+  SUPABASE_URL: 'https://rqqlvglkbpqksmaxrmkl.supabase.co',
+  /* Publishable key. Safe in the page: row level security decides what anyone can read or write. */
+  SUPABASE_KEY: 'sb_publishable_Sn-5-xGI0YjVu6nDg6DC5w_Z284UNc2',
 
   STUDENT: 'Arhan',
   ENTRY: 'Autumn 2027 entry',
@@ -76,74 +73,168 @@ var CONFIG = {
     toast._t = setTimeout(function () { t.classList.remove('on'); }, 3200);
   }
 
-  /* ---------- csv ---------- */
+  /* ---------- session ---------- */
 
-  function parseCSV(text) {
-    var out = [], row = [], cur = '', q = false;
-    for (var i = 0; i < text.length; i++) {
-      var c = text[i];
-      if (q) {
-        if (c === '"') { if (text[i + 1] === '"') { cur += '"'; i++; } else q = false; }
-        else cur += c;
-      } else if (c === '"') q = true;
-      else if (c === ',') { row.push(cur); cur = ''; }
-      else if (c === '\n') { row.push(cur); cur = ''; out.push(row); row = []; }
-      else if (c !== '\r') cur += c;
+  var AUTH_KEY = 'arhan-board-session';
+  var session = null;
+
+  function b64json(part) {
+    var b = part.replace(/-/g, '+').replace(/_/g, '/');
+    b += '==='.slice((b.length + 3) % 4);
+    var bin = atob(b), bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return JSON.parse(new TextDecoder().decode(bytes));
+  }
+  function jwtEmail(tok) {
+    try { return b64json(tok.split('.')[1]).email || ''; } catch (e) { return ''; }
+  }
+  function saveSession(s2) {
+    session = s2;
+    try {
+      if (s2) localStorage.setItem(AUTH_KEY, JSON.stringify(s2));
+      else localStorage.removeItem(AUTH_KEY);
+    } catch (e) {}
+  }
+  function restoreSession() {
+    try { session = JSON.parse(localStorage.getItem(AUTH_KEY) || 'null'); } catch (e) { session = null; }
+  }
+  function claimHash() {
+    if (!location.hash || location.hash.indexOf('access_token') === -1) return false;
+    var p = {};
+    location.hash.replace(/^#/, '').split('&').forEach(function (kv) {
+      var i = kv.indexOf('=');
+      if (i > 0) p[decodeURIComponent(kv.slice(0, i))] = decodeURIComponent(kv.slice(i + 1));
+    });
+    if (!p.access_token) return false;
+    saveSession({
+      access_token: p.access_token,
+      refresh_token: p.refresh_token || '',
+      expires_at: Date.now() + (parseInt(p.expires_in, 10) || 3600) * 1000,
+      email: jwtEmail(p.access_token)
+    });
+    history.replaceState(null, '', location.pathname + location.search);
+    return true;
+  }
+  function refreshSession() {
+    if (!session || !session.refresh_token) { saveSession(null); return Promise.resolve(false); }
+    return fetch(CONFIG.SUPABASE_URL + '/auth/v1/token?grant_type=refresh_token', {
+      method: 'POST',
+      headers: { apikey: CONFIG.SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ refresh_token: session.refresh_token })
+    }).then(function (r) { return r.ok ? r.json() : null; })
+      .then(function (j) {
+        if (!j || !j.access_token) { saveSession(null); return false; }
+        saveSession({
+          access_token: j.access_token,
+          refresh_token: j.refresh_token || session.refresh_token,
+          expires_at: Date.now() + ((j.expires_in || 3600) * 1000),
+          email: jwtEmail(j.access_token)
+        });
+        return true;
+      })
+      .catch(function () { return false; });
+  }
+  function ensureFresh() {
+    if (!session) return Promise.resolve(false);
+    if (Date.now() < session.expires_at - 60000) return Promise.resolve(true);
+    return refreshSession();
+  }
+  function sendLink(email) {
+    var redirect = location.origin + location.pathname;
+    return fetch(CONFIG.SUPABASE_URL + '/auth/v1/otp?redirect_to=' + encodeURIComponent(redirect), {
+      method: 'POST',
+      headers: { apikey: CONFIG.SUPABASE_KEY, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: email, create_user: true })
+    }).then(function (r) {
+      if (r.ok) return true;
+      return r.json().then(function (j) {
+        throw new Error(j.msg || j.error_description || j.error || ('HTTP ' + r.status));
+      }, function () { throw new Error('HTTP ' + r.status); });
+    });
+  }
+  function signOut() {
+    var tok = session && session.access_token;
+    saveSession(null);
+    rows = []; loadError = null; lastFetch = null;
+    if (tok) {
+      fetch(CONFIG.SUPABASE_URL + '/auth/v1/logout', {
+        method: 'POST',
+        headers: { apikey: CONFIG.SUPABASE_KEY, Authorization: 'Bearer ' + tok }
+      }).catch(function () {});
     }
-    if (cur !== '' || row.length) { row.push(cur); out.push(row); }
-    return out;
+    render();
   }
 
-  function toRecords(grid) {
-    if (!grid.length) return [];
-    var head = grid[0].map(function (h) { return String(h).trim(); });
-    var idx = {};
-    head.forEach(function (h, i) { if (idx[h] === undefined) idx[h] = i; });
-    var get = function (r, name) { return idx[name] === undefined ? '' : (r[idx[name]] || '').trim(); };
+  /* ---------- rest ---------- */
 
-    return grid.slice(1).map(function (r) {
-      var name = get(r, 'School');
-      if (!name) return null;
-      var items = TICKS.filter(function (t) { return idx[t] !== undefined; })
-        .map(function (t) { return { label: t, done: truthy(get(r, t)) }; });
-      var done = items.filter(function (x) { return x.done; }).length;
-      return {
-        name: name,
-        country: get(r, 'Country') || '',
-        round: get(r, 'Round') || '',
-        date: parseDate(get(r, 'Deadline')),
-        checked: truthy(get(r, 'Date checked')),
-        lead: get(r, 'Lead') || 'Unassigned',
-        note: get(r, 'Notes') || '',
-        items: items,
-        done: done,
-        total: items.length,
-        pct: items.length ? done / items.length : 0
+  function rest(path, opts) {
+    opts = opts || {};
+    return ensureFresh().then(function (ok) {
+      if (!ok) throw new Error('auth');
+      var h = {
+        apikey: CONFIG.SUPABASE_KEY,
+        Authorization: 'Bearer ' + session.access_token,
+        'Content-Type': 'application/json',
+        Prefer: opts.prefer || 'return=representation'
       };
-    }).filter(Boolean).sort(function (a, b) {
+      return fetch(CONFIG.SUPABASE_URL + '/rest/v1/' + path, {
+        method: opts.method || 'GET',
+        headers: h,
+        body: opts.body === undefined ? undefined : JSON.stringify(opts.body)
+      });
+    }).then(function (r) {
+      if (r.status === 401) throw new Error('auth');
+      if (!r.ok) return r.text().then(function (t) { throw new Error(t || ('HTTP ' + r.status)); });
+      if (r.status === 204) return null;
+      return r.text().then(function (t) { return t ? JSON.parse(t) : null; });
+    });
+  }
+
+  /* ---------- mapping ---------- */
+
+  function shape(r) {
+    var t = r.ticks || {};
+    var items = TICKS.map(function (label) { return { label: label, done: t[label] === true }; });
+    var done = items.filter(function (x) { return x.done; }).length;
+    return {
+      id: r.id,
+      name: r.name,
+      country: r.country || '',
+      round: r.round || '',
+      deadline: r.deadline || '',
+      date: parseDate(r.deadline),
+      checked: !!r.date_checked,
+      lead: r.lead || 'Unassigned',
+      note: r.notes || '',
+      items: items,
+      done: done,
+      total: items.length,
+      pct: items.length ? done / items.length : 0
+    };
+  }
+  function sortRows(list) {
+    return list.sort(function (a, b) {
       if (!a.date) return 1; if (!b.date) return -1;
-      return a.date - b.date;
+      if (a.date - b.date) return a.date - b.date;
+      return a.name.localeCompare(b.name);
     });
   }
 
   function load() {
-    if (!CONFIG.SHEET_CSV || CONFIG.SHEET_CSV.indexOf('PASTE_') === 0) {
-      loadError = 'notconfigured';
-      render();
-      return Promise.resolve();
-    }
-    var url = CONFIG.SHEET_CSV + (CONFIG.SHEET_CSV.indexOf('?') > -1 ? '&' : '?') + 'cachebust=' + Date.now();
-    return fetch(url, { cache: 'no-store' })
-      .then(function (r) { if (!r.ok) throw new Error('HTTP ' + r.status); return r.text(); })
-      .then(function (text) {
-        rows = toRecords(parseCSV(text));
-        loadError = rows.length ? null : 'empty';
-        lastFetch = new Date();
-        render();
+    if (!session) { render(); return Promise.resolve(); }
+    return rest('rpc/is_board_member', { method: 'POST', body: {} })
+      .then(function (isMember) {
+        if (isMember !== true) { loadError = 'notmember'; rows = []; render(); return null; }
+        return rest('schools?select=*').then(function (list) {
+          rows = sortRows((list || []).map(shape));
+          loadError = rows.length ? null : 'empty';
+          lastFetch = new Date();
+          render();
+        });
       })
       .catch(function (e) {
-        loadError = 'fetch';
-        console.error('Sheet fetch failed:', e);
+        if (String(e.message) === 'auth') { saveSession(null); loadError = null; }
+        else { loadError = 'fetch'; console.error('Board load failed:', e); }
         render();
       });
   }
@@ -252,10 +343,12 @@ var CONFIG = {
       : t === 'warn' ? '<span class="chip soon">' + d + ' days out</span>'
       : t === 'done' ? '<span class="chip round">Complete</span>' : '';
     var items = s.items.map(function (it) {
-      return '<li class="tickrow' + (it.done ? ' on' : '') + '"><span class="box"></span><span class="lab">' + esc(it.label) + '</span></li>';
+      return '<li class="tickrow' + (it.done ? ' on' : '') + '" data-tick="' + esc(it.label) + '"' +
+        ' role="button" tabindex="0" aria-pressed="' + (it.done ? 'true' : 'false') + '">' +
+        '<span class="box"></span><span class="lab">' + esc(it.label) + '</span></li>';
     }).join('');
 
-    return '<article class="card ' + (t ? 'is-' + t : '') + '">' +
+    return '<article class="card ' + (t ? 'is-' + t : '') + '" data-id="' + esc(s.id) + '">' +
       '<div class="card-top"><div class="meta">' +
         '<h3>' + esc(s.name) + '</h3>' +
         '<div class="chips"><span class="chip round">' + esc(s.round) + '</span><span class="chip">' + esc(s.country) + '</span>' + statusChip + '</div>' +
@@ -271,7 +364,8 @@ var CONFIG = {
       '</svg><b>' + s.done + '/' + s.total + '</b></div>' +
       '</div>' +
       '<ul class="list">' + items + '</ul>' +
-      '<div class="card-foot"><div class="notefoot">' + esc(s.note) + '</div></div>' +
+      '<div class="card-foot"><div class="notefoot">' + esc(s.note) + '</div>' +
+        '<button type="button" class="linkbtn" data-edit="' + esc(s.id) + '">Edit</button></div>' +
     '</article>';
   }
 
@@ -295,7 +389,7 @@ var CONFIG = {
         '<div><div class="v">' + tt.done + ' / ' + tt.total + '</div><div class="k">Items done</div></div>' +
         '<div><div class="v">' + tt.open + '</div><div class="k">Still open</div></div>' +
       '</div>' +
-      '<a class="cta" href="' + esc(CONFIG.SHEET_EDIT) + '" target="_blank" rel="noopener">Update the board</a>' +
+      '<button type="button" class="cta" id="addschool">Add a school</button>' +
       '</div>' + clock + '</div></header>';
   }
 
@@ -306,7 +400,7 @@ var CONFIG = {
         '<div class="track"><i style="width:' + (r.n === 0 ? 2 : Math.max(4, r.n / L.max * 100)) + '%"></i></div>' +
         '<div class="v">' + r.n + '</div></div>';
     }).join('');
-    return '<div class="bars"><p class="cap">Open items counted against whoever is named as lead for that school. Change the Lead column in the sheet to move the load.</p>' + bars + '</div>';
+    return '<div class="bars"><p class="cap">Open items counted against whoever is named as lead for that school. Open a school and change its lead to move the load.</p>' + bars + '</div>';
   }
 
   function railBlock() {
@@ -320,14 +414,14 @@ var CONFIG = {
   }
 
   function errorBlock() {
-    if (loadError === 'notconfigured') {
-      return '<div class="errorbox"><b>The sheet link is not set yet.</b>Open <code>app.js</code> and put the published CSV link into <code>CONFIG.SHEET_CSV</code>, then redeploy.</div>';
+    if (loadError === 'notmember') {
+      return '<div class="errorbox"><b>You are signed in, but not on the list for this board.</b>Ask Dhiren to add ' + esc(session ? session.email : 'your address') + ', then sign in again.</div>';
     }
     if (loadError === 'fetch') {
-      return '<div class="errorbox"><b>Could not reach the sheet.</b>The board is usually published to the web as CSV. Check that the publish is still switched on in the sheet, then refresh this page.</div>';
+      return '<div class="errorbox"><b>Could not reach the board.</b>That is usually a dropped connection. Press Refresh, and if it keeps failing the database may be paused.</div>';
     }
     if (loadError === 'empty') {
-      return '<div class="errorbox"><b>The sheet loaded, but there are no schools in it.</b>Add a row with a school name and a deadline, then refresh.</div>';
+      return '<div class="errorbox"><b>No schools on the board yet.</b>Press <b>Add a school</b> to put the first one up.</div>';
     }
     return '';
   }
@@ -335,6 +429,7 @@ var CONFIG = {
   /* ---------- render ---------- */
 
   function render() {
+    if (!session) { renderAuth(); return; }
     var err = errorBlock();
     app.innerHTML =
       '<nav class="topbar"><div class="inner">' +
@@ -343,7 +438,7 @@ var CONFIG = {
           '<a href="#runway" data-nav>Runway</a><a href="#board" data-nav>Board</a>' +
           '<a href="#load" data-nav>Who carries what</a><a href="#cycle" data-nav>The cycle</a>' +
         '</div>' +
-        '<a class="cta small" href="' + esc(CONFIG.SHEET_EDIT) + '" target="_blank" rel="noopener">Edit</a>' +
+        '<button type="button" class="cta small" id="signout">' + esc(session ? session.email : 'Sign out') + '</button>' +
       '</div></nav>' +
 
       heroBlock() +
@@ -368,7 +463,7 @@ var CONFIG = {
         '<section id="cycle"><div class="sechead"><h2>The cycle</h2>' +
           '<span class="hint">Fixed dates, not ours to move</span></div>' + railBlock() + '</section>' +
 
-        '<p class="colophon">This page reads a Google Sheet the family edits. Changes show up here within about five minutes, or straight away if you press Refresh. Cycle dates come from the published 2026 to 2027 calendars, and the UCAS equal consideration deadline of 13 January 2027 at 18:00 UK time is confirmed on ucas.com. US dates vary school by school, so a deadline stays marked unchecked until someone ticks the Date checked column in the sheet.</p>' +
+        '<p class="colophon">The board is the record. Tick an item and it saves for everyone straight away; the page also re-reads itself every five minutes so another person\u2019s change appears without a reload. Only people on the list can open it. Cycle dates come from the published 2026 to 2027 calendars, and the UCAS equal consideration deadline of 13 January 2027 at 18:00 UK time is confirmed on ucas.com. US dates vary school by school, so a deadline stays marked unchecked until someone confirms it on the school\u2019s own site and ticks it here.</p>' +
       '</main>';
 
     stamp();
@@ -380,7 +475,7 @@ var CONFIG = {
     var el = document.getElementById('stamp');
     if (!el) return;
     el.textContent = lastFetch
-      ? 'Last read from the sheet at ' + lastFetch.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      ? 'Last synced at ' + lastFetch.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       : 'Not loaded yet';
   }
 
@@ -432,13 +527,196 @@ var CONFIG = {
     tip.style.top = Math.max(8, e.clientY - 58) + 'px';
   });
 
+  /* ---------- sign in ---------- */
+
+  function renderAuth() {
+    app.innerHTML =
+      '<div class="gate"><div class="gatebox">' +
+        '<div class="eyebrow">' + esc(CONFIG.ENTRY) + '</div>' +
+        '<h1>' + esc(CONFIG.STUDENT) + '’s Application Board</h1>' +
+        '<p class="lede">Private to the family. Put in your email and a sign-in link comes back.</p>' +
+        '<form id="signin" class="gateform" novalidate>' +
+          '<input type="email" id="email" placeholder="you@example.com" autocomplete="email" required>' +
+          '<button class="cta" type="submit">Send me a link</button>' +
+        '</form>' +
+        '<p class="gatenote" id="gatenote">The link lasts an hour. Open it on this device.</p>' +
+      '</div></div>';
+    var f = document.getElementById('signin');
+    f.addEventListener('submit', function (ev) {
+      ev.preventDefault();
+      var em = document.getElementById('email').value.trim();
+      var note = document.getElementById('gatenote');
+      var btn = f.querySelector('button');
+      if (!em || em.indexOf('@') < 1) { note.textContent = 'That does not look like an email address.'; note.className = 'gatenote bad'; return; }
+      btn.disabled = true; btn.textContent = 'Sending…';
+      sendLink(em).then(function () {
+        note.textContent = 'Link sent to ' + em + '. Open it on this device.';
+        note.className = 'gatenote ok';
+        btn.textContent = 'Sent';
+      }).catch(function (err) {
+        note.textContent = 'Could not send that: ' + err.message;
+        note.className = 'gatenote bad';
+        btn.disabled = false; btn.textContent = 'Send me a link';
+      });
+    });
+  }
+
+  /* ---------- add and edit ---------- */
+
+  var LEADS = ['Arhan', 'Dhiren', 'Unassigned'];
+  var openId = null;
+
+  function byId(id) { var f = null; rows.forEach(function (r) { if (r.id === id) f = r; }); return f; }
+
+  function openForm(id) {
+    openId = id || null;
+    var s2 = id ? byId(id) : null;
+    var v = s2 || { name: '', country: '', round: '', deadline: '', lead: 'Arhan', note: '', checked: false };
+    var wrap = document.createElement('div');
+    wrap.className = 'modal on';
+    wrap.id = 'modal';
+    wrap.innerHTML =
+      '<div class="modal-card" role="dialog" aria-modal="true">' +
+        '<h3>' + (id ? 'Edit ' + esc(v.name) : 'Add a school') + '</h3>' +
+        '<form id="schoolform">' +
+          '<label>School<input name="name" required value="' + esc(v.name) + '"></label>' +
+          '<div class="row2">' +
+            '<label>Country<input name="country" value="' + esc(v.country) + '" placeholder="US"></label>' +
+            '<label>Round<input name="round" value="' + esc(v.round) + '" placeholder="EA"></label>' +
+          '</div>' +
+          '<div class="row2">' +
+            '<label>Deadline<input name="deadline" type="date" value="' + esc(v.deadline) + '"></label>' +
+            '<label>Lead<input name="lead" list="leadlist" value="' + esc(v.lead) + '"></label>' +
+          '</div>' +
+          '<datalist id="leadlist">' + LEADS.map(function (l) { return '<option value="' + esc(l) + '">'; }).join('') + '</datalist>' +
+          '<label>Notes<textarea name="notes" rows="2">' + esc(v.note) + '</textarea></label>' +
+          '<label class="chk"><input type="checkbox" name="date_checked"' + (v.checked ? ' checked' : '') + '>' +
+            '<span>Deadline confirmed on the school’s own site</span></label>' +
+          '<div class="modal-foot">' +
+            (id ? '<button type="button" class="linkbtn danger" id="delschool">Remove</button>' : '<span></span>') +
+            '<div class="modal-actions">' +
+              '<button type="button" class="cta small ghost" id="cancelform">Cancel</button>' +
+              '<button type="submit" class="cta small">' + (id ? 'Save' : 'Add') + '</button>' +
+            '</div>' +
+          '</div>' +
+        '</form>' +
+      '</div>';
+    document.body.appendChild(wrap);
+    var form = document.getElementById('schoolform');
+    form.addEventListener('submit', function (ev) { ev.preventDefault(); submitForm(form, openId); });
+    var first = form.querySelector('input[name=name]');
+    if (first) first.focus();
+  }
+
+  function closeForm() {
+    var m = document.getElementById('modal');
+    if (m && m.parentNode) m.parentNode.removeChild(m);
+    openId = null;
+  }
+
+  function submitForm(form, id) {
+    var fd = new FormData(form);
+    var body = {
+      name: String(fd.get('name') || '').trim(),
+      country: String(fd.get('country') || '').trim(),
+      round: String(fd.get('round') || '').trim(),
+      deadline: String(fd.get('deadline') || '').trim() || null,
+      lead: String(fd.get('lead') || '').trim() || 'Unassigned',
+      notes: String(fd.get('notes') || '').trim(),
+      date_checked: fd.get('date_checked') === 'on'
+    };
+    if (!body.name) { toast('A school needs a name.'); return; }
+    var btn = form.querySelector('button[type=submit]');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    var req = id
+      ? rest('schools?id=eq.' + encodeURIComponent(id), { method: 'PATCH', body: body })
+      : rest('schools', { method: 'POST', body: { name: body.name, country: body.country, round: body.round, deadline: body.deadline, lead: body.lead, notes: body.notes, date_checked: body.date_checked, ticks: {} } });
+    req.then(function () {
+      closeForm();
+      toast(id ? 'Saved.' : 'School added.');
+      return load();
+    }).catch(function (e) {
+      btn.disabled = false; btn.textContent = id ? 'Save' : 'Add';
+      toast(String(e.message) === 'auth' ? 'Session expired. Sign in again.' : 'Could not save that.');
+      if (String(e.message) === 'auth') { closeForm(); render(); }
+      else console.error(e);
+    });
+  }
+
+  function removeSchool(id) {
+    var s2 = byId(id);
+    if (!s2) return;
+    if (!window.confirm('Remove ' + s2.name + ' from the board? This cannot be undone.')) return;
+    rest('schools?id=eq.' + encodeURIComponent(id), { method: 'DELETE', prefer: 'return=minimal' })
+      .then(function () { closeForm(); toast('Removed.'); return load(); })
+      .catch(function (e) { toast('Could not remove that.'); console.error(e); });
+  }
+
+  function recompute(s2) {
+    s2.done = s2.items.filter(function (x) { return x.done; }).length;
+    s2.pct = s2.total ? s2.done / s2.total : 0;
+  }
+
+  function toggleTick(id, label) {
+    var s2 = byId(id);
+    if (!s2) return;
+    var hit = null;
+    s2.items.forEach(function (x) { if (x.label === label) hit = x; });
+    if (!hit) return;
+    hit.done = !hit.done;
+    recompute(s2);
+    render();
+    var payload = {};
+    s2.items.forEach(function (x) { payload[x.label] = x.done; });
+    rest('schools?id=eq.' + encodeURIComponent(id), { method: 'PATCH', body: { ticks: payload }, prefer: 'return=minimal' })
+      .catch(function (e) {
+        if (String(e.message) === 'auth') { toast('Session expired. Sign in again.'); render(); return; }
+        toast('That did not save. Reloading the board.');
+        console.error(e);
+        load();
+      });
+  }
+
+  /* ---------- events ---------- */
+
   document.addEventListener('click', function (e) {
-    if (e.target && e.target.id === 'refresh') {
-      e.target.textContent = 'Reading…';
+    var t = e.target;
+    if (!t) return;
+
+    if (t.id === 'refresh') {
+      t.textContent = 'Reading…';
       load().then(function () { toast('Board refreshed.'); });
+      return;
+    }
+    if (t.id === 'signout') { signOut(); return; }
+    if (t.id === 'addschool') { openForm(null); return; }
+    if (t.id === 'cancelform') { closeForm(); return; }
+    if (t.id === 'delschool') { removeSchool(openId); return; }
+    if (t.id === 'modal') { closeForm(); return; }
+
+    var ed = t.closest ? t.closest('[data-edit]') : null;
+    if (ed) { openForm(ed.getAttribute('data-edit')); return; }
+
+    var row = t.closest ? t.closest('.tickrow') : null;
+    if (row) {
+      var card = row.closest('[data-id]');
+      if (card) toggleTick(card.getAttribute('data-id'), row.getAttribute('data-tick'));
     }
   });
 
+  document.addEventListener('keydown', function (e) {
+    if (e.key === 'Escape' && document.getElementById('modal')) { closeForm(); return; }
+    if (e.key !== 'Enter' && e.key !== ' ') return;
+    var row = e.target && e.target.closest ? e.target.closest('.tickrow') : null;
+    if (!row) return;
+    e.preventDefault();
+    var card = row.closest('[data-id]');
+    if (card) toggleTick(card.getAttribute('data-id'), row.getAttribute('data-tick'));
+  });
+
+  restoreSession();
+  claimHash();
+  render();
   load();
-  setInterval(load, CONFIG.REFRESH_MS);
+  setInterval(function () { if (session) load(); }, CONFIG.REFRESH_MS);
 })();
