@@ -7,7 +7,7 @@
 var CONFIG = {
   /* Paste the published-to-web CSV link here.
      Sheet > File > Share > Publish to web > choose the tab > Comma-separated values (.csv) */
-  SHEET_CSV: 'PASTE_PUBLISHED_CSV_URL_HERE',
+  SHEET_CSV: 'https://docs.google.com/spreadsheets/d/e/2PACX-1vTOv5kbUtnEUDdVFvB3Rf8EDdoaLogyBm4eoCL9BrUW1D5gFjQ0ra-E2xMECgVvUTbd7PEkUNkd7H8J/pub?gid=1392823886&single=true&output=csv',
 
   /* The normal edit link, for the "Update the board" button. */
   SHEET_EDIT: 'https://docs.google.com/spreadsheets/d/1micJob3EH9BX4Jo6ZFTCEtAKB8dMbXLujgcFhHbBq38/edit',
