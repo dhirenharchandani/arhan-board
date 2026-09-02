@@ -682,9 +682,13 @@ var CONFIG = {
     hit.done = !hit.done;
     recompute(s2);
     render();
-    var payload = {};
-    s2.items.forEach(function (x) { payload[x.label] = x.done; });
-    rest('schools?id=eq.' + encodeURIComponent(id), { method: 'PATCH', body: { ticks: payload }, prefer: 'return=minimal' })
+    /* Write only the one key, server side, so two people ticking different items
+       inside the same refresh window cannot overwrite each other. */
+    rest('rpc/set_tick', {
+      method: 'POST',
+      prefer: 'return=minimal',
+      body: { p_id: id, p_label: label, p_value: hit.done }
+    })
       .catch(function (e) {
         if (String(e.message) === 'auth') { toast('Session expired. Sign in again.'); render(); return; }
         toast('That did not save. Reloading the board.');
