@@ -11,6 +11,7 @@ var CONFIG = {
   SUPABASE_KEY: 'sb_publishable_Sn-5-xGI0YjVu6nDg6DC5w_Z284UNc2',
 
   STUDENT: 'Arhan',
+  TITLE: 'Arhan’s College Application Journey',
   ENTRY: 'Autumn 2027 entry',
   REFRESH_MS: 300000
 };
@@ -384,7 +385,7 @@ var CONFIG = {
     }
     return '<header class="hero"><div class="wrap"><div>' +
       '<div class="eyebrow">' + esc(CONFIG.ENTRY) + '</div>' +
-      '<h1>' + esc(CONFIG.STUDENT) + '’s Application Board</h1>' +
+      '<h1>' + esc(CONFIG.TITLE) + '</h1>' +
       '<p class="lede">One list the whole family reads the same way. Tick what is done, name who is carrying it, and the deadline maths takes care of itself.</p>' +
       '<div class="tally">' +
         '<div><div class="v">' + rows.length + '</div><div class="k">Schools</div></div>' +
@@ -535,7 +536,7 @@ var CONFIG = {
     app.innerHTML =
       '<div class="gate"><div class="gatebox">' +
         '<div class="eyebrow">' + esc(CONFIG.ENTRY) + '</div>' +
-        '<h1>' + esc(CONFIG.STUDENT) + '’s Application Board</h1>' +
+        '<h1>' + esc(CONFIG.TITLE) + '</h1>' +
         '<p class="lede">Private to the family. Put in your email and a sign-in link comes back.</p>' +
         '<form id="signin" class="gateform" novalidate>' +
           '<input type="email" id="email" placeholder="you@example.com" autocomplete="email" required>' +
