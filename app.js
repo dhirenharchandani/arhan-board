@@ -1,7 +1,8 @@
 /* ============================================================
-   Arhan's Application Board — public site
-   Data source: a Google Sheet published to the web as CSV.
-   Everything below is read-only. Editing happens in the sheet.
+   Arhan's Application Board — private family board
+   Data source: Supabase (Postgres + row level security).
+   Sign in by emailed link; only addresses in the members
+   table can read or change anything.
    ============================================================ */
 
 var CONFIG = {
@@ -379,7 +380,7 @@ var CONFIG = {
     } else {
       clock = '<div class="clock"><div class="cap">Time to the next deadline</div>' +
         '<div class="units"><div class="u"><div class="n">&mdash;</div><div class="l">nothing queued</div></div></div>' +
-        '<div class="target"><span>Add a school with a date in the sheet and the clock starts.</span></div></div>';
+        '<div class="target"><span>Add a school with a deadline and the clock starts.</span></div></div>';
     }
     return '<header class="hero"><div class="wrap"><div>' +
       '<div class="eyebrow">' + esc(CONFIG.ENTRY) + '</div>' +
@@ -390,7 +391,7 @@ var CONFIG = {
         '<div><div class="v">' + tt.done + ' / ' + tt.total + '</div><div class="k">Items done</div></div>' +
         '<div><div class="v">' + tt.open + '</div><div class="k">Still open</div></div>' +
       '</div>' +
-      '<button type="button" class="cta" id="addschool">Add a school</button>' +
+      (loadError === 'notmember' ? '' : '<button type="button" class="cta" id="addschool">Add a school</button>') +
       '</div>' + clock + '</div></header>';
   }
 
