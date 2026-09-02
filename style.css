@@ -300,3 +300,4 @@ section{scroll-margin-top:64px}
   margin-top:6px;padding-top:14px;border-top:1px solid var(--line)}
 .modal-actions{display:flex;gap:8px}
 @media (max-width:430px){.row2{grid-template-columns:1fr}}
+.linkbtn.armed{color:var(--crit);font-weight:500}

@@ -344,7 +344,8 @@ var CONFIG = {
       : t === 'done' ? '<span class="chip round">Complete</span>' : '';
     var items = s.items.map(function (it) {
       return '<li class="tickrow' + (it.done ? ' on' : '') + '" data-tick="' + esc(it.label) + '"' +
-        ' role="button" tabindex="0" aria-pressed="' + (it.done ? 'true' : 'false') + '">' +
+        ' role="button" tabindex="0" aria-pressed="' + (it.done ? 'true' : 'false') + '"' +
+        ' aria-label="' + esc(it.label + ' — ' + s.name) + '">' +
         '<span class="box"></span><span class="lab">' + esc(it.label) + '</span></li>';
     }).join('');
 
@@ -643,10 +644,23 @@ var CONFIG = {
     });
   }
 
-  function removeSchool(id) {
+  function removeSchool(id, btn) {
     var s2 = byId(id);
     if (!s2) return;
-    if (!window.confirm('Remove ' + s2.name + ' from the board? This cannot be undone.')) return;
+    if (btn && btn.getAttribute('data-armed') !== '1') {
+      btn.setAttribute('data-armed', '1');
+      btn.textContent = 'Tap again to remove';
+      btn.classList.add('armed');
+      clearTimeout(removeSchool._t);
+      removeSchool._t = setTimeout(function () {
+        if (!btn.parentNode) return;
+        btn.removeAttribute('data-armed');
+        btn.textContent = 'Remove';
+        btn.classList.remove('armed');
+      }, 4000);
+      return;
+    }
+    if (btn) { btn.disabled = true; btn.textContent = 'Removing…'; }
     rest('schools?id=eq.' + encodeURIComponent(id), { method: 'DELETE', prefer: 'return=minimal' })
       .then(function () { closeForm(); toast('Removed.'); return load(); })
       .catch(function (e) { toast('Could not remove that.'); console.error(e); });
@@ -691,7 +705,7 @@ var CONFIG = {
     if (t.id === 'signout') { signOut(); return; }
     if (t.id === 'addschool') { openForm(null); return; }
     if (t.id === 'cancelform') { closeForm(); return; }
-    if (t.id === 'delschool') { removeSchool(openId); return; }
+    if (t.id === 'delschool') { removeSchool(openId, t); return; }
     if (t.id === 'modal') { closeForm(); return; }
 
     var ed = t.closest ? t.closest('[data-edit]') : null;
